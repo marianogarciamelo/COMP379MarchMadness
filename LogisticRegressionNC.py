@@ -192,7 +192,6 @@ if __name__ == "__main__":
     X_val = val_df[feature_cols].values
     Y_val = val_df['CHAMP']
 
-
     # Train Model
     model, scaler = train(X_train, Y_train)
     
