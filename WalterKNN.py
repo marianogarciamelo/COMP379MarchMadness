@@ -85,6 +85,37 @@ def predict_round(model, df, imputer, feature_columns, year):
     return df_year.sort_values("EXPECTED_ROUND", ascending = False)[
         ["TEAM", "EXPECTED_ROUND", "PREDICTED_ROUND"]]
 
+def load_2026_data():
+    base_directory = Path(__file__).parent
+    data_directory = base_directory / "march+madness+data"
+    path_2026 = data_directory/ "2026training.csv"
+
+    #check to see if its actuallu loading the data:
+    print("Loading 2026 data from:", path_2026)
+    
+    df_2026 = pd.read_csv(path_2026)
+    df_2026 = df_2026.loc[:, ~df_2026.columns.str.contains("Unnamed", case =False)]
+
+    return df_2026
+
+def predict_2026_outcomes(model, imputer, fearure_columns, df_2026):
+    numeric_df = df_2026.select_dtypes(include=[np.number])
+    X_2026 = numeric_df[fearure_columns]
+
+    X_2026 = imputer.transform(X_2026)
+
+    prob_matrix = model.predict_proba(X_2026)
+
+    expected_round= (prob_matrix * np.arange(prob_matrix.shape[1])).sum(axis=1)
+
+    df_2026["EXPECTED_ROUND"] = expected_round
+    df_2026["PREDICTED_ROUND"] = model.predict(X_2026)
+
+    return df_2026.sort_values("EXPECTED_ROUND", ascending = False)[
+        ["TEAM", "EXPECTED_ROUND", "PREDICTED_ROUND"]
+        ]
+
+
 if __name__ == "__main__":
     materialize_dataset()
     df = load_data()
@@ -97,3 +128,8 @@ if __name__ == "__main__":
 
     print("\n Predictions for 2023: ")
     print(predict_round(model, df, imputer, feature_columns, 2023).head(10))
+
+#testing for 2026 season
+    df_2026 = load_2026_data()
+    print("\nPredictions for 2026:")
+    print(predict_2026_outcomes(model, imputer, feature_columns, df_2026).head(10))
