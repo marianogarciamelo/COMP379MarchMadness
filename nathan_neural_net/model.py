@@ -8,7 +8,14 @@ from sklearn.utils.class_weight import compute_class_weight
 
 
 class GamePredictor:
-    """Sklearn-based MLP game predictor (no TensorFlow/Keras)."""
+    """Sklearn-based MLP game predictor. 
+    Not using TensorFlow/Keras because it was giving me so many issues.
+
+    The pipeline is simple:
+    - Standardize features with StandardScaler (fit on training data only).
+    - Train an MLPClassifier with class-balancing via sample weights.
+    - Provide save/load helpers so the trained scaler/model can be reused.
+    """
 
     def __init__(
         self,
@@ -29,14 +36,19 @@ class GamePredictor:
         self.feature_names: List[str] = []
 
     def fit(self, X: np.ndarray, y: np.ndarray, feature_names: Iterable[str]) -> None:
+        # Persist feature ordering for later predictions/saving.
         self.feature_names = list(feature_names)
+        # Normalize inputs so each feature has mean 0, std 1.
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X)
 
+        # Compute balanced weights to offset any class imbalance (favorites vs underdogs).
         class_weights = compute_class_weight(class_weight="balanced", classes=np.array([0, 1]), y=y)
         cw = {0: class_weights[0], 1: class_weights[1]}
         sample_weight = np.array([cw[int(label)] for label in y], dtype=float)
 
+        print(feature_names)
+        # MLP with early stopping on a held-out validation split.
         self.model = MLPClassifier(
             hidden_layer_sizes=self.hidden_units,
             activation="relu",
@@ -53,6 +65,7 @@ class GamePredictor:
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         if self.model is None or self.scaler is None:
             raise RuntimeError("Model has not been trained or loaded.")
+        # Ensure shape is (n_samples, n_features)
         arr = np.asarray(X)
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)

@@ -20,6 +20,7 @@ from .model import GamePredictor
 
 
 def _round_pairs(matchups: pd.DataFrame, year: int, round_no: int) -> List[Tuple[str, str]]:
+    """Pair teams in bracket order for a single round (assumes 2n teams)."""
     subset = matchups[(matchups["YEAR"] == year) & (matchups["CURRENT ROUND"] == round_no)]
     ordered = subset.sort_values("BY YEAR NO", ascending=False)
     if len(ordered) % 2 != 0:
@@ -68,6 +69,7 @@ class TournamentSimulator:
     def _simulate_round(
         self, year: int, pairs: List[Tuple[str, str]], round_no: int, rng: np.random.Generator
     ) -> List[str]:
+        """Simulate one round: predict each matchup, sample winners, and return them in bracket order."""
         winners: List[str] = []
         for team_a, team_b in pairs:
             vector = matchup_vector(
@@ -87,6 +89,7 @@ class TournamentSimulator:
     def simulate_tournament(
         self, year: int, simulations: int = 500, seed: Optional[int] = None
     ) -> SimulationResult:
+        """Monte Carlo the entire bracket for a year and tally champion counts."""
         rounds = sorted(
             self.matchups[self.matchups["YEAR"] == year]["CURRENT ROUND"].unique(), reverse=True
         )
@@ -130,6 +133,7 @@ def train_predictor(
     epochs: int = 40,
     verbose: bool = False,
 ) -> Tuple[GamePredictor, PairwiseDataset]:
+    """Train the game predictor on all scored games, optionally excluding a target year."""
     dataset = build_training_dataset(exclude_year=sim_year)
     if verbose:
         print(
@@ -160,6 +164,7 @@ def evaluate_year(
     verbose: bool = False,
     **train_kwargs,
 ) -> EvaluationResult:
+    """Train (or reuse) a model and score it against the real games for the target year."""
     predictor, dataset = train_predictor(
         sim_year=None if include_target_in_training else target_year,
         verbose=verbose,
@@ -198,7 +203,9 @@ def evaluate_year(
     X_test = np.vstack(rows)
     y_true = np.array(labels, dtype=int)
     probs = predictor.predict_proba(X_test)
+    # Avoid log-loss blowups on exact 0/1 probabilities.
     probs = np.clip(probs, 1e-7, 1 - 1e-7)
+    # Deterministic winner pick for accuracy/precision/F1.
     preds = (probs >= 0.5).astype(int)
 
     accuracy = float(accuracy_score(y_true, preds))
@@ -230,6 +237,7 @@ def simulate_year(
     verbose: bool = False,
     **train_kwargs,
 ) -> SimulationResult:
+    """Load or train a model, then run bracket simulations and return champion probabilities."""
     predictor = None
     features: Optional[pd.DataFrame] = None
     feature_cols: Optional[List[str]] = None

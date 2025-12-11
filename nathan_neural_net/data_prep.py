@@ -15,19 +15,24 @@ MATCHUPS_PATH = BASE_DIR / "march+madness+data" / "Tournament Matchups.csv"
 class PairwiseDataset:
     X: np.ndarray
     y: np.ndarray
-    feature_names: List[str]
-    base_features: List[str]
-    feature_frame: pd.DataFrame
-    matchups: pd.DataFrame
-    skipped_games: int
+    feature_names: List[str]  # Full feature list used for training (currently base_features)
+    base_features: List[str]  # Original per-team feature columns (before diff)
+    feature_frame: pd.DataFrame  # All team-season features
+    matchups: pd.DataFrame  # Raw matchup table (per team per round)
+    skipped_games: int  # Games dropped due to missing features or scores
 
 
 def _standardize_team(value: str) -> str:
+    """Canonicalize team names for consistent joins/filters."""
     return str(value).strip().upper()
 
 
 def load_team_features(path: Path = FEATURE_PATH) -> Tuple[pd.DataFrame, List[str]]:
-    """Load the combined feature table and return it plus the usable feature columns."""
+    """Load the combined feature table and return it plus the usable feature columns.
+
+    - Drops known leakage columns (e.g., ROUND = actual advancement).
+    - Casts numerics and imputes missing values with column means.
+    """
     leakage_cols = {"ROUND"}  # Post-tournament outcomes; exclude to avoid leakage.
     df = pd.read_csv(path)
     df.columns = [col.upper() for col in df.columns]
@@ -44,6 +49,7 @@ def load_team_features(path: Path = FEATURE_PATH) -> Tuple[pd.DataFrame, List[st
 
 
 def load_matchups(path: Path = MATCHUPS_PATH) -> pd.DataFrame:
+    """Load matchup list for all seasons and clean basic types/duplicates."""
     df = pd.read_csv(path)
     df.columns = [col.upper() for col in df.columns]
     df["TEAM"] = df["TEAM"].map(_standardize_team)
@@ -61,6 +67,10 @@ def _iter_games(
     exclude_year: Optional[int] = None,
     require_scores: bool = False,
 ) -> Iterable[Tuple[int, int, pd.Series, pd.Series]]:
+    """Yield paired matchups (team A, team B) per round, optionally skipping a year or missing scores.
+
+    Games are ordered by BY YEAR NO descending so that bracket pairing stays consistent.
+    """
     df = matchups
     if exclude_year is not None:
         df = df[df["YEAR"] != exclude_year]
@@ -84,6 +94,7 @@ def _diff_vector(
     team_a: str,
     team_b: str,
 ) -> np.ndarray:
+    """Return team_a - team_b feature difference for the specified year."""
     try:
         vec_a = feature_lookup.loc[(year, team_a), feature_cols].values.astype(float)
         vec_b = feature_lookup.loc[(year, team_b), feature_cols].values.astype(float)
@@ -98,6 +109,12 @@ def build_training_dataset(
     matchups_path: Path = MATCHUPS_PATH,
     augment: bool = True,
 ) -> PairwiseDataset:
+    """Construct a balanced pairwise dataset of feature differences and outcomes.
+
+    For each scored game:
+      - use (team_a - team_b) as features, label 1 if team_a wins else 0
+      - if augment=True, also add the flipped row (team_b - team_a) with inverted label
+    """
     features, feature_cols = load_team_features(feature_path)
     matchups = load_matchups(matchups_path)
     feature_lookup = features.set_index(["YEAR", "TEAM"])
@@ -149,6 +166,7 @@ def matchup_vector(
     round_no: int,
     feature_lookup: Optional[pd.DataFrame] = None,
 ) -> np.ndarray:
+    """Convenience helper: compute feature diff for a single matchup."""
     lookup = feature_lookup if feature_lookup is not None else feature_table.set_index(["YEAR", "TEAM"])
     diff = _diff_vector(lookup, feature_cols, year, team_a, team_b)
     return diff
