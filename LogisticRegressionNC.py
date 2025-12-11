@@ -12,12 +12,9 @@ from sklearn.preprocessing import StandardScaler
 
 # URL
 data = './combined_features.csv'
-# # Load Data
-# df = pd.read_csv(data)
 
 def create_features(df):
-    # Create meaningful features while avoiding data leakage (ROUND-based)
-    # Only use info that would be available BEFORE the tournament starts
+    # Create meaningful features while avoiding data leakage (ROUND and TEAM_NO are excluded)
 
     df = df.copy()
 
@@ -32,10 +29,7 @@ def create_features(df):
     'LUCK_RATING' # Close Game Rating
     ]
 
-
     return df, feature_cols
-
-
 
 def prepare_data(df, val_year=2025, exclude_recent=False):
     # Prepare data for modeling
@@ -44,13 +38,17 @@ def prepare_data(df, val_year=2025, exclude_recent=False):
     # Define target variable
     df['CHAMP'] = (df['ROUND'] == 1).astype(int)
     
+    # Use only historical data (ROUND > 0)
     historical_df = df[df['ROUND'] > 0].copy()
 
+    # Split into training and validation sets
     if val_year is None:
         val_year = historical_df['YEAR'].max()
 
+    # Validation Set
     val_df = historical_df[historical_df['YEAR'] == val_year].copy()
 
+    # Training Set
     if exclude_recent:
         train_df = historical_df[historical_df['YEAR'] < val_year].copy()
     else:
@@ -72,6 +70,7 @@ def train(X_train, Y_train):
         class_weight='balanced' # Accounting for class imbalance (few Champions)
     )
 
+    # Train Model
     print("Training Logistic Regression Model...")
     log_reg.fit(X_train_scaled, Y_train)
     return log_reg, scaler
@@ -91,8 +90,10 @@ def evaluate(model, scaler, X_test, Y_test, team_names=None):
     accuracy = accuracy_score(Y_test, Y_pred)
     print(f"Validation Accuracy: {accuracy:.3f}")
 
+    # Classification Report
     report = classification_report(Y_test, Y_pred, target_names=['Not Champion', 'Champion'])
     print("Classification Report:", report)
+    # Top Predictions
     if team_names is not None:
         top_k = min(10, len(Y_pred_prob))
         top_indices = np.argsort(Y_pred_prob)[-top_k:][::-1]
@@ -120,8 +121,10 @@ if __name__ == "__main__":
     print(f"Training Samples: {len(train_df)}, ({train_df['CHAMP'].sum()} champion(s))")
     print(f"Validation Samples: {len(val_df)}, ({val_df['CHAMP'].sum()} champion(s))")
 
+    # Handle Missing Values by Imputing with Median
     feature_medians = train_df[feature_cols].median()
 
+    # Impute Missing Values
     X_train = train_df[feature_cols].values
     Y_train = train_df['CHAMP']
     X_val = val_df[feature_cols].values
@@ -137,18 +140,24 @@ if __name__ == "__main__":
     # Predict for 2026 using provided 2026 training data
     df_2026 = pd.read_csv('./march+madness+data/2026training.csv')
 
+    # Create Features for 2026 Data
     df_2026, feature_cols_2026 = create_features(df_2026)
 
+    # Impute Missing Values in 2026 Data
     df_2026[feature_cols] = df_2026[feature_cols].fillna(feature_medians)
 
+    # Predict Championship Probabilities for 2026
     X_2026 = df_2026[feature_cols].values
     X_2026_scaled = scaler.transform(X_2026)
 
+    # Get Predicted Probabilities
     pred_prods_2026 = model.predict_proba(X_2026_scaled)[:, 1]
     df_2026['CHAMP PROBABILITY'] = pred_prods_2026
 
+    # Sort Teams by Predicted Probability
     df_2026_sorted = df_2026.sort_values('CHAMP PROBABILITY', ascending=False)
 
+    # Display Top Teams for 2026
     print("\nTop Teams Predicted for 2026 Championship (from 2026training.csv):")
     for i, (_, row) in enumerate(df_2026_sorted.head(10).iterrows(), 1):
         print(f"{i:<6}. Team: {row['TEAM']:<25}, Predicted Probability: {row['CHAMP PROBABILITY']:.3f}")
